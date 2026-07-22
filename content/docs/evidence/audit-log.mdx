@@ -1,0 +1,62 @@
+---
+title: The audit log
+description: What is recorded for every call, and where it lives.
+---
+
+Two tables carry the record, joined on a decision id.
+
+## `route_decisions` — written before the call
+
+One row per request, inserted **synchronously before** anything is forwarded
+upstream. If NautGate cannot write the audit row, the call does not proceed —
+that ordering is the point, because a log written afterwards can be lost exactly
+when it matters.
+
+It holds identity (`agent_id`, `session_id`, `project_id`), the classification
+verdict and its signals, the routing decision with its reason and fallback chain,
+request shape (message count, tool count, stream flag, byte size), source IP and
+hostname, and — when policy allows — the prompt and tool bodies.
+
+## `route_outcomes` — written after it
+
+Keyed by the same decision id. Status code, duration, time to first byte, token
+counts (prompt, completion, reasoning, cache read, cache write), cost, notional
+cost, the attested `actual_model` and `actual_provider`, and a set of flags worth
+knowing:
+
+| Flag | Meaning |
+|---|---|
+| `was_empty` | Billed completion tokens, but no text **and** no tool calls |
+| `used_fallback` | The tier's primary was unavailable |
+| `client_disconnected` | The caller hung up mid-stream |
+| `was_truncated` | The capture buffer hit its cap |
+| `rate_limited_429` | Upstream rate limit hit |
+| `prefix_hash` | Hash of the stable prompt prefix, for cache analysis |
+
+Outcome writes never break a request. If the database is unavailable the row is
+appended to a disk spool and drained on the next successful startup.
+
+<Callout>
+A streamed outcome is recorded even when the client disconnects — the write
+happens in the stream's `finally` block. Note that streamed outcomes are
+persisted with `status_code = 200` regardless of what happened mid-stream.
+</Callout>
+
+## The decision id
+
+Returned on every chat response as `X-Nautgate-Decision-Id`, and the join key for
+everything. Quote it in a bug report and the whole chain comes back:
+
+```bash
+curl -s http://localhost:8090/v1/decisions/{decision_id} \
+  -H "Authorization: Bearer ng_…"
+```
+
+## Reports
+
+`GET /v1/reports/audit?days=N` produces a governance report — traffic and spend
+by agent, model mix, sensitivity counts, failure tags, data-category flows and
+experiment results. The dashboard renders it as a self-contained HTML document
+you can download or print to PDF.
+
+The report contains **aggregate metadata only** — no prompt or response content.

@@ -1,0 +1,89 @@
+---
+title: Quickstart
+description: Running, with a client pointed at it.
+---
+
+## Requirements
+
+Docker, Python 3.12+ and [uv](https://github.com/astral-sh/uv). A Postgres 16
+database — the compose stack brings one up for you.
+
+## Install
+
+```bash
+git clone https://github.com/48Nauts-Operator/NautGate.git
+cd NautGate
+cp .env.example deploy/.env      # add the provider keys you want to use
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+The dashboard is at [http://localhost:8090/dashboard](http://localhost:8090/dashboard).
+
+<Callout type="warn">
+NautGate needs a database to do anything. Without a reachable
+`NAUTGATE_DB_URL`, every endpoint except `/health` returns
+`503 {"detail": "db_unavailable"}` — including `/ready`. If the gateway looks
+dead on arrival, check the database first.
+</Callout>
+
+## Mint a key
+
+Open **Settings → Keys** in the dashboard and create one. Keys look like
+`ng_<key_id>_<secret>` and the secret is shown exactly once — it is stored as an
+argon2id hash, so it cannot be recovered afterwards.
+
+A key carries three things worth knowing about:
+
+- **`agent_id`** — required; what the call is attributed to in the audit log.
+- **`ttl_days`** — optional, 1 to 90 days. Without it the key does not expire.
+- **`override_model`** — optional; pins every request on this key to one model.
+  See [Model override](/docs/routing/model-override).
+
+## Point a client at it
+
+```bash
+# OpenAI-compatible
+export OPENAI_BASE_URL=http://localhost:8090/v1
+export OPENAI_API_KEY=ng_…
+
+# Anthropic-compatible
+export ANTHROPIC_BASE_URL=http://localhost:8090
+export ANTHROPIC_API_KEY=ng_…
+```
+
+For Claude Code specifically, the `--bare` flag matters — see
+[Claude Code](/docs/clients/claude-code).
+
+## Verify it worked
+
+```bash
+curl -s http://localhost:8090/v1/chat/completions \
+  -H "Authorization: Bearer ng_…" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"hello"}]}' \
+  -D- -o /dev/null | grep -i x-nautgate
+```
+
+Every chat response carries its own provenance in the headers:
+
+```
+X-Nautgate-Decision-Id: 01J…
+X-Nautgate-Provider: anthropic
+X-Nautgate-Model: claude-fable-5
+X-Nautgate-Tier: balanced
+X-Nautgate-Score: 0.41
+X-Nautgate-Inbound-Format: openai_chat
+```
+
+Quote the `Decision-Id` in a bug report and the whole chain comes back — what was
+asked, what was decided, what answered, and what it cost.
+
+## Development
+
+```bash
+just up / just down   # docker compose stack
+just dev              # uvicorn --reload
+just test             # pytest
+just lint / just fix  # ruff
+just list-keys        # keys currently minted
+```

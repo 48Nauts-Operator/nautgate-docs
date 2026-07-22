@@ -1,0 +1,12 @@
+{
+  "pages": [
+    "index",
+    "quickstart",
+    "clients",
+    "routing",
+    "evidence",
+    "analytics",
+    "operations",
+    "reference"
+  ]
+}

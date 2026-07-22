@@ -1,0 +1,54 @@
+---
+title: Model override
+description: Pin a model to an API key and drive any client with it.
+---
+
+Most clients let you choose a model. Some do not — Claude Code sends a fixed
+model name and has no setting to change it. Model override solves this at the
+key rather than at the client.
+
+## How it works
+
+An API key can carry an `override_model`. Every request authenticated with that
+key has its `model` field **rewritten** before forwarding, regardless of what the
+client asked for. The client keeps its harness — tools, agent loop, permissions,
+system prompt — and something else generates the tokens.
+
+This sits at rung 2 of the [DECIDE ladder](/docs/routing/how-routing-works#the-ladder),
+beaten only by an explicit `X-Naut-Model` header.
+
+## Setting it
+
+Set it when you mint the key, in **Settings → Keys**, or via the API:
+
+```bash
+curl -X POST http://localhost:8090/v1/keys \
+  -H "Authorization: Bearer ng_…" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "claude-code-on-kimi",
+        "agent_id": "claude-code",
+        "override_model": "openrouter/moonshotai/kimi-k2.6"
+      }'
+```
+
+<Callout type="warn">
+There is no endpoint to change `override_model` on an existing key. Changing a
+pin means minting a new key. Additionally, authentication is cached for **5
+minutes**, so a newly-created or newly-revoked key can take that long to take
+effect.
+</Callout>
+
+## Verifying it actually happened
+
+Do not ask the model — it will tell you what its client's system prompt says. Read
+the record instead:
+
+```bash
+curl -s http://localhost:8090/v1/decisions/recent \
+  -H "Authorization: Bearer ng_…" | jq '.[0] | {decision_model, actual_model, decision_reason}'
+```
+
+`decision_reason` will read `override:key-><model>`, and on an attested provider
+`actual_model` confirms what served it. See [Attestation](/docs/routing/attestation)
+for which providers give you that guarantee.

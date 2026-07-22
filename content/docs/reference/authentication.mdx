@@ -1,0 +1,68 @@
+---
+title: Authentication
+description: Keys, lanes, and the caveats.
+---
+
+## Metered keys
+
+Format: `ng_<key_id>_<secret>`. Only the secret's argon2id hash is stored — the
+token is shown once at creation and cannot be recovered.
+
+Accepted three ways:
+
+```
+Authorization: Bearer ng_…
+x-api-key: ng_…
+?token=ng_…
+```
+
+<Callout type="warn">
+The `?token=` query form is accepted by **every** endpoint, not only the HTML
+report views it was intended for. Query strings end up in browser history, proxy
+logs and referrer headers — prefer a header, and be aware of this when placing
+NautGate behind any logging proxy.
+</Callout>
+
+## Minting
+
+`POST /v1/keys` with `name` and `agent_id` required. Optional: `profile`
+(default `auto`), `ttl_days` (1–90), and `override_model` to pin a model.
+
+Creating a key requires an existing valid key — there is no unauthenticated
+bootstrap endpoint. The first key is created through the dashboard on a local
+deployment.
+
+## Revocation and expiry
+
+`POST /v1/keys/{key_id}/revoke` — a soft revoke that sets `revoked_at`. Keys with
+`expires_at` in the past are rejected the same way.
+
+<Callout type="warn">
+**Authentication is cached for five minutes.** A revoked or expired key keeps
+working until the cache entry ages out, because the cache is consulted before the
+database. The same applies to a newly-set `override_model`.
+
+If you are revoking a key because it leaked, restart the process rather than
+waiting.
+</Callout>
+
+## OAuth passthrough
+
+Subscription credentials skip the `ng_` gate entirely — see
+[Credential lanes](/docs/routing/lanes). Two forms are recognised:
+
+- `sk-ant-oat01-…` in a bearer or `x-api-key` header — Anthropic. **Only works
+  against `/v1/messages`.**
+- A `chatgpt-account-id` header — Codex, detected by header presence rather than
+  by inspecting the token.
+
+The token itself is never stored; the agent is identified by a short slice of it.
+
+## Failure modes
+
+Every authentication failure returns the same `401 "missing or invalid bearer
+token"` regardless of cause, deliberately — it does not disclose whether a key
+exists, is revoked, or is expired.
+
+Without a database, everything except `/health` returns `503 db_unavailable`,
+which is *not* an auth error even though it can look like one.

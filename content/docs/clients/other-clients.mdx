@@ -1,0 +1,56 @@
+---
+title: Other clients
+description: Codex, Pi, and anything speaking OpenAI or Anthropic.
+---
+
+## Any OpenAI-compatible client
+
+```bash
+export OPENAI_BASE_URL=http://localhost:8090/v1
+export OPENAI_API_KEY=ng_…
+```
+
+Works with the OpenAI SDKs, Cline, OpenCode, and anything else that lets you set
+a base URL. Both `/v1/chat/completions` and `/v1/responses` are served.
+
+## Codex / ChatGPT subscription
+
+Requests carrying a `chatgpt-account-id` header are recognised as subscription
+traffic and forwarded to the Codex backend untouched, on the passthrough lane.
+
+<Callout>
+Codex's identity comes from the header, not from a token inspection, and the
+outcome is recorded with a fixed `codex-subscription` model rather than an
+attested one.
+
+Note also that recent Codex versions run the model over a WebSocket rather than
+HTTP, which a `BASE_URL` redirect cannot intercept. If your Codex traffic is not
+appearing, that is why — capturing it needs a proxy rather than a base-URL swap.
+</Callout>
+
+## Pi
+
+Pi's Responses traffic has a dedicated isolated route, `POST /pi/v1/responses`,
+which forwards the Responses body verbatim to OpenAI. It is deliberately separate
+from the shared pipeline so that Pi-specific handling can never affect the other
+routes.
+
+## Your own application
+
+Nothing special is required — it is an OpenAI-compatible endpoint. Use `model:
+"auto"` to let the gateway pick a tier-appropriate model, or name a model
+explicitly.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8090/v1", api_key="ng_…")
+
+r = client.chat.completions.create(
+    model="auto",
+    messages=[{"role": "user", "content": "…"}],
+)
+```
+
+Set a distinct `agent_id` per application when minting keys — it is what the
+audit log, cost breakdown and efficiency scoring attribute against.

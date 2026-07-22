@@ -1,0 +1,79 @@
+---
+title: Capture and privacy
+description: What gets stored, what never does, and the edges of that guarantee.
+---
+
+Every request is classified *before* anything is written. The classification then
+decides whether bodies are stored at all — the gate is on capture itself, not on
+redacting something already on disk.
+
+## Classification
+
+A pure regex pass over the assembled user text — no model call, always runs. It
+produces one of three verdicts:
+
+| Verdict | What happens to bodies |
+|---|---|
+| `none` | Stored in full |
+| `pii` | Stored, with every PII **and** secret match replaced by `[<rule>-redacted]` |
+| `secret` | **Never written** |
+
+Around 26 rules cover credentials (OpenAI, Anthropic, GitHub, AWS, Google, Slack,
+Stripe, SendGrid, Twilio, Azure, private key blocks, JWTs, bearer tokens),
+connection strings and `.env` content, private IPs and SSH key references, plus
+PII (email, phone, SSN, card numbers). Card matches are Luhn- and IIN-validated
+before counting, so a random 16-digit number is not treated as a card.
+
+An optional LLM confirm pass can be enabled for ambiguous text. It only fires when
+the regex pass found nothing, the text is long enough, and it contains a hint
+phrase like "confidential" or "do not share". It has a hard 500 ms timeout, fails
+open as `none`, and **can only upgrade a verdict, never downgrade one**.
+
+## What is always recorded
+
+Metadata, regardless of sensitivity: identity, timings, token counts, cost, the
+routing decision, request shape, and the classification signals themselves —
+rule ids and match counts, never the matched text.
+
+When a call is classified `secret`, tool-call arguments are dropped too; only the
+tool names are kept.
+
+<Callout type="warn">
+**One field is not covered by the sensitivity gate: `prompt_excerpt`.**
+
+A 200-character excerpt of the last user message is recorded on every call and is
+**not** redacted or suppressed at any sensitivity level, including `secret`. A
+credential appearing in the first 200 characters of the last user message will be
+persisted.
+
+The excerpt is also used downstream — it is passed to extensions, used as the
+correlation key for [head-to-head](/docs/analytics/bench) comparison, and shown in
+shadow trial listings.
+
+If you are deploying under a policy that promises secrets are never written,
+verify this against your own traffic before relying on it.
+</Callout>
+
+## Size limits
+
+Captured bodies are truncated at 256 KB, UTF-8 safely, with the original byte
+count recorded. The streaming capture buffer is separately capped at 8 MB and
+truncated at an SSE event boundary so the stored body stays parseable. The
+**client always receives the full stream** — these caps bound only what is kept
+for audit.
+
+## What the Privacy tab shows
+
+Findings are recovered by re-scanning stored bodies, which has two consequences
+worth understanding:
+
+- For `pii`-classified rows the samples shown come from the already-redacted
+  body.
+- For rows classified `none`, real matched text can appear — those bodies were
+  stored in full precisely because the rules did not flag them.
+
+## Consequences of `secret`
+
+A secret-classified call is excluded from the quality judge and never mirrored
+into a shadow trial, and its body is not available to extensions. Its metadata
+still appears in every count, chart and cost figure.

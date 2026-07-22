@@ -1,0 +1,65 @@
+---
+title: Claude Code
+description: Point it at the gateway, and run it on any model.
+---
+
+## Subscription passthrough
+
+If you want Claude Code to keep using your Max plan and simply be logged:
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8090 claude
+```
+
+Its OAuth token is recognised, forwarded untouched, and the plan still covers the
+call. Everything is recorded, and the dashboard reports what that traffic *would*
+have cost on metered billing. See [Credential lanes](/docs/routing/lanes).
+
+## Running it on another model
+
+```bash
+ANTHROPIC_BASE_URL=http://localhost:8090 \
+ANTHROPIC_API_KEY=ng_… \
+claude --bare
+```
+
+<Callout type="warn">
+**`--bare` is required.** Without it Claude Code prefers its stored OAuth login
+from the keychain and your `ANTHROPIC_API_KEY` is ignored — so the request
+arrives on the subscription lane and nothing is routed. If your override seems to
+do nothing, this is almost always why.
+</Callout>
+
+Claude Code has no model setting, so the model comes from the key. Mint one with
+an `override_model` — see [Model override](/docs/routing/model-override) — and
+every request on that key is served by that model instead.
+
+The client keeps its entire harness: tools, agent loop, permissions, its own
+system prompt. Only the token generation moves.
+
+## It will still say it is Claude
+
+It will. Claude Code asserts an identity in its system prompt, so whatever model
+you route to answers "I am Claude". **This is expected and is not evidence of
+anything.** Do not use the model's self-report to check whether your override
+worked — see [Attestation](/docs/routing/attestation).
+
+Check the record instead:
+
+```bash
+curl -s "http://localhost:8090/v1/decisions/recent?limit=1" \
+  -H "Authorization: Bearer ng_…" \
+  | jq '.[0] | {decision_model, actual_model, decision_reason}'
+```
+
+## Choosing a model that suits the harness
+
+Claude Code sends a large, stable prefix every turn — the system prompt plus every
+connected tool schema. Two consequences:
+
+- **Prefer a model whose runtime does prefix caching.** Without it you pay to
+  reprocess the whole harness on every turn. The [Cache](/docs/analytics/cache)
+  tab shows whether you are getting reuse.
+- **Watch the context ratio** — input tokens burned per output token. A high
+  ratio usually means tool schemas rather than thinking. See
+  [Tooling](/docs/analytics/tooling).

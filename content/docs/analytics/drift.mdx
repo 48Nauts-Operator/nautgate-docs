@@ -1,0 +1,57 @@
+---
+title: Model health and drift
+description: Noticing when a model stops behaving like itself.
+---
+
+Providers change what sits behind a model name without changing the name. Drift
+detection is how that becomes visible.
+
+## How it works
+
+Per `(provider, model, metric)` an EWMA mean and variance is maintained. Each new
+observation gets a z-score; `|z| > 3` records an anomaly, and **two consecutive
+anomalies** raise a clustered alert, which auto-resolves after five normal
+samples. No z-scoring happens until at least ten samples exist, and an anomalous
+sample updates the baseline at one-tenth weight so a single outlier cannot
+swallow the baseline.
+
+Five metrics:
+
+| Metric | Detects |
+|---|---|
+| `input_tokens_per_byte` | Tokenizer or cache-policy change |
+| `response_size_bytes` | Verbosity drift |
+| `first_byte_ms` | Latency change |
+| `duration_ms` | Throughput change |
+| `messages_count_delta` | Per-session compaction |
+
+## Provider health
+
+The status strip merges *passive* real-traffic status codes from the last ten
+minutes with an active heartbeat. Passive is authoritative — the synthetic
+heartbeat only fills the gap when there is no traffic, deliberately, so that a
+stale ping credential cannot mark a provider down while real calls are
+succeeding.
+
+## Probing
+
+An optional scheduled probe suite fires a fixed set of prompts at each configured
+model over both the subscription and metered transports, and fingerprints the
+result — provenance string, tokenizer tokens-per-byte over a stable text, time to
+first byte, judged reasoning quality, refusal markers — then baselines it for
+self-drift and compares the two paths.
+
+<Callout type="warn">
+The probe module is explicit about its own limits, and so should you be: the
+`model` string is self-reported, there is **no attestation**, and temperature 0 is
+not byte-deterministic, so a response hash is a weak signal. These are
+*statistical signals that something changed — strong evidence, not proof.*
+</Callout>
+
+## Scorecard
+
+A trust score per `(provider, model, tier)` in [0, 1], starting neutral at 0.50.
+Clean requests nudge it up; bloat findings subtract a per-call-capped penalty. It
+decays back toward neutral with a seven-day half-life, so old evidence stops
+counting. Below 0.30 a model is demoted in routing, and the demotion is recorded
+in the decision reason.

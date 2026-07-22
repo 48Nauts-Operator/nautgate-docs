@@ -1,0 +1,72 @@
+---
+title: Deployment
+description: Running it with Docker, and the compose traps.
+---
+
+```bash
+git clone https://github.com/48Nauts-Operator/NautGate.git
+cd NautGate
+cp .env.example deploy/.env
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+Three services, all bound to loopback:
+
+| Service | Port | Started by default |
+|---|---|---|
+| `nautgate-db` (Postgres 16) | `127.0.0.1:5432` | yes |
+| `nautrouter` (sidecar) | `127.0.0.1:8404` | yes |
+| `nautgate-core` (the gateway) | `127.0.0.1:8090` | **no** |
+
+<Callout type="warn">
+**`docker compose up` does not start NautGate itself.** The core service sits
+behind the `full` profile, because day-to-day development runs it directly with
+`uv run uvicorn` for reload. To get the whole stack in containers:
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile full up -d
+```
+
+This is the single most common way to end up with a gateway that appears not to
+exist.
+</Callout>
+
+## Two more compose caveats
+
+**Provider keys do not reach the core container.** The compose file passes them to
+`nautrouter` only. Serving traffic works, because routing happens in the sidecar —
+but the features that call models from the core process (quality judging, shadow
+trials, the drift investigator) will find no credentials. Add them to the
+`nautgate-core` environment if you want those.
+
+**`NAUTGATE_DB_URL` is ignored by the core container** — its database URL is
+hardcoded in the compose file rather than templated. Setting it in `deploy/.env`
+has no effect there.
+
+## Extensions
+
+An optional overlay adds the capture and brain sidecars:
+
+```bash
+docker compose \
+  -f deploy/docker-compose.yml \
+  -f deploy/docker-compose.with-extensions.yml \
+  --profile full up -d
+```
+
+## Backups
+
+`pg_dump` via `docker exec`, gzipped to `NAUTGATE_BACKUP_DIR`
+(`~/.nautgate/backups` by default), on a schedule you set in Settings. The backup
+scheduler is local-disk only, so it keeps running in
+[offline mode](/docs/operations/offline-mode).
+
+Restore is **destructive** — it drops and recreates the `nautgate` schema.
+
+## Exposure
+
+Every published port binds to `127.0.0.1`. NautGate has no multi-tenant
+authorisation model beyond API keys, `NAUTGATE_LOCAL_ADMIN_TOKEN` embeds a live
+token in the dashboard HTML, and a key can be passed as a `?token=` query
+parameter. **Put it behind a reverse proxy with its own authentication before
+exposing it beyond localhost or a private network.**

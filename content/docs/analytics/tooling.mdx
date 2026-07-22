@@ -1,0 +1,30 @@
+---
+title: Tooling
+description: What your MCP servers cost simply by existing.
+---
+
+Every connected tool's schema travels in **every request**, whether the model
+calls it or not. On a long agent session that is the largest single line item most
+people never look at.
+
+## Carrying cost
+
+For the most recent captured tool manifest per agent, each distinct tool
+definition's JSON is measured and converted to tokens, and attributed to a
+server by the `mcp__<server>__<tool>` naming convention. Anything else is bucketed
+as built-in.
+
+The result is per-server: schema tokens carried, and how many agents carry them.
+
+## The discovery mix
+
+Alongside it, a daily breakdown of filesystem-discovery calls (`Read`, `Grep`,
+`Glob`, `LS`) against `mcp__*` calls, with average prompt tokens. The argument a
+good MCP server makes is that one structured call replaces a long chain of
+reading and grepping — this is where you can see whether that is happening.
+
+<Callout type="warn">
+**There is no computed savings figure here.** The panel gives you carrying cost
+and the discovery mix; judging whether a server earns its place is left to you.
+Do not read the mix chart as a dollar saving.
+</Callout>

@@ -1,0 +1,42 @@
+---
+title: Experiments
+description: Champion–challenger trials on your own traffic.
+---
+
+A sampled slice of real calls is answered a second time in the background by a
+challenger, and a blind judge decides whether anyone would have noticed.
+
+## Guarantees
+
+- Never touches the response path — the trial runs after the real answer shipped.
+- Prompts classified `secret` are never mirrored.
+- Only tool-free calls with a captured prompt and a non-empty champion answer are
+  eligible.
+- A combined daily cost cap covers challenger and judge calls together.
+- Failures are recorded as errors rather than silently dropped.
+
+## Two kinds of trial
+
+**Model** — a cheaper model answers the same prompt.
+
+**Prompt diet** — the *same* model answers a pruned prompt, recording original and
+pruned byte counts. A diet strategy that proves out can then be applied in-flight
+to a given agent's real requests.
+
+## Judging
+
+Blind and pairwise. The judge sees "Answer 1" and "Answer 2" without knowing which
+is which, at temperature 0, and returns a winner or a tie.
+
+## The statistics
+
+Challenger wins plus ties count as acceptable. That rate is tested against a
+**one-sided binomial non-inferiority test at p₀ = 0.90**, requiring at least ten
+trials before it will call a result. The claim being tested is "the cheaper model
+is not meaningfully worse", not "the cheaper model is better".
+
+<Callout>
+`projected_monthly_saving_usd` is a **linear extrapolation** — the per-call cost
+difference multiplied by the champion's 30-day volume. It assumes the mix of work
+stays the same. Treat it as a scale indicator, not a forecast.
+</Callout>

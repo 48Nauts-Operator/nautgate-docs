@@ -1,0 +1,75 @@
+---
+title: Local models
+description: LM Studio, and anything else OpenAI-shaped.
+---
+
+## LM Studio
+
+Address local models as `lmstudio/<model-id>`:
+
+```json
+{ "model": "lmstudio/qwen/qwen3.6-35b-a3b", "messages": [...] }
+```
+
+Point NautGate at your instance:
+
+```bash
+LMSTUDIO_BASE_URL=http://host.docker.internal:1234   # reachable from the container
+NAUTGATE_LMSTUDIO_URL=http://localhost:1238          # reachable from the host
+```
+
+<Callout type="warn">
+There are **three** LM Studio URL variables with **two** different default ports,
+and they are not interchangeable:
+
+| Variable | Used by | Default |
+|---|---|---|
+| `LMSTUDIO_BASE_URL` | NautGate core, passed to the router | `http://host.docker.internal:1234` |
+| `LMSTUDIO_URL` | NautRouter, *inside* the container | a hardcoded LAN IP — **you must set this** |
+| `NAUTGATE_LMSTUDIO_URL` | the `/v1/models` listing | `http://localhost:1238` |
+
+The bundled NautRouter default for `LMSTUDIO_URL` is the author's own LAN
+address. If you do not override it, local calls will hang trying to reach a
+machine that is not yours.
+</Callout>
+
+Models your instance is serving are discovered automatically and appear in
+`GET /v1/models` with `"nautgate_local": true`, which is what populates the model
+picker when pinning a key.
+
+## Other runtimes
+
+The LM Studio forwarder is a plain OpenAI-compatible client, and it is also the
+fallback branch for any provider that does not resolve elsewhere. In practice
+that means another OpenAI-shaped local server — Ollama's compatible endpoint,
+vLLM, llama.cpp's server — can be reached by pointing `LMSTUDIO_BASE_URL` at it.
+
+<Callout>
+**Ollama is not separately supported.** There is no Ollama provider, namespace or
+configuration in the codebase — only the generic OpenAI-shaped path above. Treat
+it as "probably works, untested" rather than a supported integration.
+</Callout>
+
+## Cost is NULL, not zero
+
+Local models have no pricing entries, so `cost_usd` is recorded as NULL rather
+than `0`. That is deliberate — see [Tiers and pricing](/docs/routing/tiers-and-pricing).
+The real cost of a local model is hardware and time, which the
+[Bench](/docs/analytics/bench) latency figures measure better than a dollar
+column would.
+
+## Streaming token counts
+
+OpenAI-compatible servers do not report usage on streamed responses unless asked.
+NautRouter injects `stream_options.include_usage` on the LM Studio path for
+exactly this reason — without it local runs record zero tokens and cannot be
+compared against cloud models at all.
+
+## Making them usable
+
+A local model in an agent harness lives or dies on **prefix caching**. The system
+prompt and tool schemas are resent every turn; if the runtime cannot reuse that
+prefix you pay full prefill on each one. Architecture matters here — some
+quantised formats and sliding-window attention implementations do not cache
+usefully. Check the [Cache](/docs/analytics/cache) tab's latency lens, which
+works for local models even though they report no cache tokens.

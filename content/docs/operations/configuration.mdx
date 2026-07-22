@@ -1,0 +1,103 @@
+---
+title: Configuration
+description: Every knob, and the ones that will bite you.
+---
+
+Configuration comes from three places, in this precedence:
+
+**Database row > environment variable > compiled default**
+
+Settings saved in the dashboard live in a single-row `app_config` table and take
+effect **without a restart**. Environment variables are read once at startup and
+cached, so changing one needs a restart.
+
+## Core environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `NAUTGATE_DB_URL` | — | Postgres DSN. Effectively required |
+| `NAUTGATE_LISTEN_HOST` | `0.0.0.0` | Bind host |
+| `NAUTGATE_LISTEN_PORT` | `8090` | Bind port |
+| `NAUTGATE_LOG_LEVEL` | `INFO` | Log level |
+| `NAUTGATE_PROFILE` | `auto` | Default routing profile |
+| `NAUTROUTER_BASE_URL` | `http://localhost:8404` | Sidecar URL |
+| `NAUTGATE_ROUTING_CONFIG_PATH` | `config/routing.yaml` | Tier → model table |
+| `NAUTGATE_PRICING_CONFIG_PATH` | `config/pricing.yaml` | Pricing table |
+| `NAUTGATE_CONFIG_PATH` | — | Plugin/extension wiring |
+| `NAUTGATE_OUTCOME_SPOOL_PATH` | `/tmp/nautgate/outcomes.ndjson` | Durable spool when the DB is down |
+| `NAUTGATE_OFFLINE` | — | `1`/`true`/`yes` forces [offline mode](/docs/operations/offline-mode) |
+| `NAUTGATE_LOCAL_ADMIN_TOKEN` | — | Embeds a token in the dashboard HTML. Local single-operator use only |
+
+Provider credentials: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
+`GEMINI_API_KEY`, plus the LM Studio URLs described in
+[Local models](/docs/clients/local-models).
+
+<Callout type="warn">
+`NAUTGATE_OUTCOME_SPOOL_PATH` defaults to `/tmp`, which is cleared on reboot. If
+you care about draining outcomes recorded during a database outage, move it.
+</Callout>
+
+## The `.env` precedence trap
+
+Dotenv files are loaded in order and each is applied **without overriding what is
+already set**:
+
+```
+core/.env  →  <repo>/.env  →  <repo>/deploy/.env
+```
+
+Because earlier files win, and because anything already in the process
+environment beats all of them, a stale duplicate silently shadows the value you
+just edited.
+
+<Callout type="warn">
+**Never keep the same key in more than one `.env` file.** If a key change "doesn't
+take", check for duplicates in `core/.env` and for exported shell variables
+before debugging anything else. A saved snapshot of a previous process's
+environment is a particularly nasty version of this — it wins over every file,
+forever, silently.
+
+Note also that launching via `scripts/nautgate.sh` **inverts** this precedence,
+because it exports `deploy/.env` into the shell before starting the server. The
+two supported launch paths do not agree.
+</Callout>
+
+## Database-backed settings
+
+Editable in **Settings**, or via `GET`/`PUT /v1/config`:
+
+- `offline` — air-gapped mode
+- `quality_eval` — enabled, sample rate, daily cap, judge provider/model/URL
+- `shadow` — enabled, sample rate, challenger model, daily cap, prompt-diet config
+- `sb_ingest` — SecondBrain memory ingest
+- `drift_investigator` — auto-trigger, cooldown, daily cap
+
+Secrets are never returned by `GET /v1/config` and cannot be set through it — the
+database stores the *name of the environment variable* to read a key from, never
+the key itself.
+
+<Callout type="warn">
+The environment-variable fallbacks for `quality_eval` and `sb_ingest` only apply
+while the stored value is still the compiled default. **Once you save one of
+those settings in the UI, the corresponding environment variable is ignored
+permanently.**
+</Callout>
+
+## YAML
+
+`config/routing.yaml` — tier to model mapping. **Ships with an opinionated policy
+that excludes Anthropic and OpenAI from the `auto` tier**; see
+[How routing works](/docs/routing/how-routing-works).
+
+`config/pricing.yaml` — see [Tiers and pricing](/docs/routing/tiers-and-pricing).
+
+## Database
+
+Postgres 16, schema `nautgate`. Migrations apply automatically at startup, each
+in its own transaction, recorded in `schema_migrations`. There are **no
+down-migrations**; restore from backup is the rollback path, and it is
+destructive — it drops and recreates the schema.
+
+If migrations fail the app keeps serving with no database, which means everything
+except `/health` returns 503. Check the startup log rather than assuming the
+gateway is fine.

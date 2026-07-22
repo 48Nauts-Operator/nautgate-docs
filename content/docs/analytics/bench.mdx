@@ -1,0 +1,38 @@
+---
+title: Bench and head-to-head
+description: Comparing models without fooling yourself.
+---
+
+## Head-to-head — the one that matters
+
+Averaging a model across all its traffic hides the truth, because models get
+handed different work. The cheap model often looks better only because it was
+given easier questions.
+
+Head-to-head instead pairs **real calls that answered the same task**, correlated
+by a hash of the prompt excerpt, keeping only tasks that at least two distinct
+models answered. Per model per task it reports:
+
+- Calls, and average tools offered
+- Tokens in, out, and reasoning
+- **`in_per_out`** — input tokens burned per output token, the context-efficiency
+  number
+- Cost, time to first byte, total duration
+- Tool calls made and distinct tools used
+
+Models with any unpriced call are marked `unpriced` so a missing pricing entry
+never reads as free.
+
+## Synthetic bench
+
+Fires the same prompt — optionally with a canned tool set — at up to four models
+in parallel and records text, tokens, cost, latency, and which tools each model
+*wanted* to call. Tool calls are recorded, never executed.
+
+Useful for a controlled comparison. Less trustworthy than head-to-head, because a
+synthetic prompt is not your workload.
+
+## Behavioural comparison
+
+A separate set of canaries run across models with the difference judged, for
+answering "does this model behave the way it used to" rather than "is it good".

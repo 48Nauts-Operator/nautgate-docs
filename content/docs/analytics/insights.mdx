@@ -1,0 +1,59 @@
+---
+title: Insights
+description: Where context is wasted, and which models quietly changed.
+---
+
+Seven panels, all derived from real traffic.
+
+## Simulator
+
+Replays every call's actual token counts, repriced against a canned target model,
+and reports actual vs simulated spend. Calls with no pricing entry are counted
+separately rather than treated as free.
+
+## Substitution
+
+Groups judged calls by the model *requested*, then compares mean task-completion
+when the request was served as asked against when it was silently substituted.
+Reports a p-value from a Welch's t normal approximation, with a minimum of five
+calls per side. Dated snapshot names are normalised first, so
+`claude-x-20250101` versus `claude-x` is not counted as a substitution.
+
+This is the panel that answers "did the substitution actually hurt?" rather than
+merely "did one happen".
+
+## Control chart
+
+An EWMA chart per model (λ = 0.2) with ±3σ limits derived from the series' own
+history — behavioural change shown as a trend rather than a vibe.
+
+## Efficiency
+
+A composite 0–100 score per agent, weighted quality 30%, relevance 20%, waste
+20%, cache 15%, bloat 15%, renormalised over whichever components have data.
+Requires at least five calls for an agent to be scored.
+
+## Context waste
+
+Four detectors, each attributing a byte cost that is converted to dollars at the
+model's input rate:
+
+| Detector | Fires when |
+|---|---|
+| Excessive context | The actual user text is under 1% of the payload |
+| History dominance | Conversation history exceeds 80% of a payload over 10 kB |
+| Unused capabilities | Five or more tools offered, under 20% ever invoked |
+| Oversized for tier | Payload is more than twice the tier's byte envelope |
+
+The largest is taken rather than the sum, to avoid double-counting the same
+bytes.
+
+## Overthinking
+
+Reasoning-token share plotted against judged task completion — whether more
+thinking actually bought a better answer.
+
+## Data flow
+
+A privacy map: which agents produced which categories of sensitive finding, and
+which providers those flowed to.

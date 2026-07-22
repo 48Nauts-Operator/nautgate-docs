@@ -1,0 +1,26 @@
+---
+title: Analytics overview
+description: What each dashboard tab actually computes.
+---
+
+Every panel is derived from the audit log — real traffic, not synthetic
+benchmarks. This page says what each one computes, so you can judge how much
+weight a number deserves.
+
+| Tab | Computes |
+|---|---|
+| [Cost](/docs/analytics/cost) | Spend by agent, model, provider and tier, plus subscription-covered value |
+| [Cache](/docs/analytics/cache) | Prefix reuse, hit rate, and dollars saved against the uncached price |
+| [Quality](/docs/analytics/quality) | Post-hoc judge scores and failure-mode buckets |
+| [Insights](/docs/analytics/insights) | Context waste, silent substitution, efficiency, control charts |
+| [Tooling](/docs/analytics/tooling) | What MCP schemas weigh in every request |
+| [Experiments](/docs/analytics/experiments) | Champion–challenger shadow trials with a blind judge |
+| [Bench](/docs/analytics/bench) | Synthetic runs and like-for-like head-to-head on real calls |
+| [Model health](/docs/analytics/drift) | Drift detection, provider status, probing |
+
+## A general caution
+
+Several figures are **estimates or extrapolations**, and the docs say so on each
+page rather than presenting them as measurements. Where a number is a projection
+from a sample, it is labelled. Where a model has no pricing entry, its cost reads
+`null` rather than `0`, so a missing price never masquerades as free.

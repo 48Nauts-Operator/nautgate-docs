@@ -1,0 +1,83 @@
+---
+title: Tiers and pricing
+description: How difficulty is scored and how cost is calculated.
+---
+
+## Tiers
+
+Four bands — `fast`, `balanced`, `deep`, `expert` — scored from the prompt by a
+deterministic 14-dimension function. No model is called to do the scoring, so it
+is free, fast, and reproducible. See
+[How routing works](/docs/routing/how-routing-works#model-auto) for the
+thresholds and the specialty floors.
+
+Map tiers to models in `config/routing.yaml`:
+
+```yaml
+tiers:
+  fast:
+    primary:  { provider: openrouter, model: openrouter/deepseek/deepseek-v4-flash }
+    fallback: { provider: openrouter, model: google/gemini-flash }
+  expert:
+    primary:  { provider: openrouter, model: openrouter/moonshotai/kimi-k2.6 }
+    fallback: { provider: openrouter, model: google/gemini-pro }
+```
+
+## Pricing
+
+`config/pricing.yaml` is keyed `"<provider>/<model>"`, in **USD per million
+tokens**:
+
+```yaml
+pricing:
+  anthropic/claude-haiku-4-5:
+    input: 1.00
+    output: 5.00
+    cache_read: 0.10
+    cache_write: 1.25
+```
+
+Cost is `prompt × input + cache_read × cache_read + cache_write × cache_write +
+completion × output`, all divided by a million and rounded to six decimals. A
+cache tier you have not priced falls back to the full input rate, so cached
+volume is never silently free.
+
+<Callout>
+**An unpriced model costs `NULL`, not zero.** When a `(provider, model)` pair has
+no entry, `cost_usd` is stored as NULL and a `pricing_unknown` warning is logged
+once per pair. This is deliberate — a missing price should look missing, not
+free. If costs are blank in the dashboard, an entry is missing.
+</Callout>
+
+Two things to know when editing the file:
+
+- OpenRouter keys are **doubly prefixed** — the provider *and* the full model id,
+  e.g. `openrouter/openrouter/deepseek/deepseek-v4-flash`. Easy to get wrong.
+- Model ids containing brackets must be quoted:
+  `"anthropic/claude-opus-4-8[1m]"`.
+
+Snapshot names are aliased with YAML anchors so a dated model shares its family's
+price.
+
+<Callout type="warn">
+Cost is computed against **`decision_model`** — what was asked for — not
+`actual_model`. If a broker silently substitutes a different model, the call is
+priced at the requested model's rate.
+</Callout>
+
+## Token accounting
+
+Providers disagree about what "prompt tokens" means, so usage is normalised to
+one convention: **`prompt_tokens` is always fresh, non-cached input**, and
+`total_input = prompt + cache_read + cache_write`. Anthropic, OpenAI/OpenRouter,
+DeepSeek and Gemini shapes are each collapsed into it.
+
+Cost is recorded even when the client disconnects mid-stream — the outcome is
+persisted from the stream's `finally` block.
+
+<Callout>
+**Streaming usage from OpenAI-compatible servers requires an opt-in.** NautRouter
+injects `stream_options.include_usage` for LM Studio calls, because without it
+local runs recorded zero tokens and local-vs-cloud could not be compared at all.
+Note this is set for the LM Studio path only.
+</Callout>

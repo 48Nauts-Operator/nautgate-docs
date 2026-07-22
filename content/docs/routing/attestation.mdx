@@ -1,0 +1,70 @@
+---
+title: Attestation
+description: Why the served model is read, not echoed — and where that guarantee is weaker.
+---
+
+The audit log records two model fields per call:
+
+- **`decision_model`** — what NautGate decided to ask for.
+- **`actual_model`** — what the provider's own response said served it.
+
+The second is the point. It is parsed *out of the upstream response body*, never
+copied from the request, which is what makes the log attested rather than
+assumed. Comparing the two is how [silent substitution](https://nautgate.dev/glossary.html)
+is detected.
+
+## Why self-report is worthless
+
+You cannot get this by asking the model. A client's system prompt tells the model
+who to say it is — Claude Code asserts an identity in every request, so a routed
+model will answer "I am Claude" no matter what actually generated the tokens.
+The only trustworthy source is the provider's response envelope, and the only
+place that can be read is a gateway sitting in the path.
+
+## Where it is read
+
+**Non-streaming** — the top-level `model` and `provider` fields of the upstream
+JSON response.
+
+**Streaming** — the first top-level `model` / `provider` seen while walking the
+SSE events. OpenRouter and OpenAI put the actually-selected model on every chunk.
+
+## Coverage, honestly
+
+<Callout type="warn">
+Attestation is **not uniform across providers.** Document this to yourself before
+you rely on it for compliance evidence.
+
+| Path | `actual_model` |
+|---|---|
+| OpenRouter | **Attested** — read from the response |
+| OpenAI | **Attested** — read from the response |
+| LM Studio / OpenAI-shaped local | **Attested** — read from the response |
+| Anthropic (metered and OAuth) | **Echoed** — falls back to the requested model |
+| Codex / ChatGPT OAuth | Constant `codex-subscription` |
+
+The Anthropic gap is structural: Anthropic's streaming shape carries the model at
+`message.model` inside the `message_start` event, while the parser reads only a
+*top-level* `model` field. So for Claude traffic the served model currently
+mirrors what was asked for.
+
+This matters most where it is least intuitive: substitution detection is
+strongest exactly where substitution is most likely (a broker like OpenRouter),
+and weakest on a first-party API where substitution is least likely. But do not
+present an Anthropic row as independently attested evidence.
+</Callout>
+
+## Cross-checking it
+
+The claim is verifiable rather than trusted. Take any decision id, read its
+token counts, and compare against the provider's own billing dashboard for that
+window — they line up exactly, because both are counting the same response.
+
+## An independent check
+
+Attestation reads a self-declared field, so a provider that lied in its own
+response envelope would not be caught by it. NautGate additionally runs an
+optional statistical probe that fingerprints model behaviour over time and raises
+a `model_mismatch` alert at critical severity when a model stops behaving like
+itself. That is a different kind of evidence — see
+[Model health and drift](/docs/analytics/drift).

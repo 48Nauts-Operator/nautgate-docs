@@ -1,0 +1,59 @@
+---
+title: Introduction
+description: What NautGate is, and the one property everything else rests on.
+---
+
+NautGate sits between your coding agents and every model provider. Claude Code,
+Codex, Pi and your own applications point at a single endpoint; NautGate routes
+each call, records what actually happened, and tells you what it cost.
+
+```
+Claude Code ─┐
+Codex ───────┤                      ┌─ Anthropic
+Pi ──────────┼──► NautGate :8090 ───┼─ OpenAI
+your app ────┘     │                ├─ OpenRouter
+                   │                └─ LM Studio / local
+                   └──► Postgres (audit, outcomes, analytics)
+```
+
+## Why it exists
+
+Ask a model which model it is and it tells you whatever its client's system
+prompt says it is. Claude Code asserts an identity in every request, so a routed
+model answers "I am Claude" no matter what generated the tokens. **Self-report is
+worthless.**
+
+NautGate reads the model name from the *provider's own response*, never from the
+request. That single property — [attestation](/docs/routing/attestation) — is
+what makes cost attribution, substitution detection and compliance reporting
+trustworthy rather than merely plausible. You can cross-check any call against
+your provider's billing dashboard and the token counts line up exactly.
+
+## What you get
+
+**Gateway.** OpenAI Chat, Anthropic Messages and OpenAI Responses inbound, on one
+port. Two credential lanes: subscription traffic passes through untouched and
+free, metered keys get routed. Pin any model to an API key and run a client that
+has no model setting of its own on something else entirely.
+
+**Evidence.** A full audit log with policy-gated prompt and response capture,
+tokens, timings and cost. A flow view showing client → lane → decision → upstream
+→ the model that actually served it. Sensitivity classification before anything
+is written to disk.
+
+**Analytics.** Post-hoc quality judging, head-to-head model comparison on real
+traffic, champion/challenger shadow trials, MCP tooling cost accounting, cache
+economics, drift detection, and spend broken down by project, agent and model.
+
+## Where to start
+
+- [Quickstart](/docs/quickstart) — running, with a client pointed at it, in a few minutes.
+- [Claude Code on any model](/docs/clients/claude-code) — the most-asked-for thing it does.
+- [Air-gapped operation](/docs/operations/offline-mode) — for on-prem and compliance work.
+- [Glossary](https://nautgate.dev/glossary.html) — the vocabulary, defined against what the code does.
+
+## Status
+
+Actively developed and in daily use, but **pre-1.0** — the schema and endpoints
+can still change between releases. Licensed [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html);
+self-host it freely, forever.

@@ -1,0 +1,149 @@
+---
+title: API endpoints
+description: Every route the gateway serves.
+---
+
+Everything under `/v1` requires a metered `ng_` key. See
+[Authentication](/docs/reference/authentication).
+
+<Callout>
+Without a database, every endpoint except `/health` returns
+`503 {"detail": "db_unavailable"}`.
+</Callout>
+
+## Inference
+
+| Method | Path | Inbound format |
+|---|---|---|
+| `POST` | `/v1/chat/completions` | OpenAI Chat — the canonical shape, no translation |
+| `POST` | `/v1/messages` | Anthropic Messages |
+| `POST` | `/v1/responses` | OpenAI Responses |
+| `GET` | `/v1/models` | — |
+| `POST` | `/pi/v1/responses` | OpenAI Responses, verbatim passthrough to OpenAI |
+
+All three inference formats converge on one pipeline: classify → score → decide →
+precapture → forward → record outcome. Anthropic Messages and OpenAI Responses
+are translated to OpenAI Chat on the way in and back to their own shape on the
+way out, streaming included.
+
+`GET /v1/models` is synthesized rather than proxied — it merges the routing
+table's tiers (primary and fallback models), any models your LM Studio instance
+is serving, and a synthetic `auto` entry. Alongside the standard OpenAI fields
+each entry carries `nautgate_provider`, `nautgate_tiers` and `nautgate_unhealthy`.
+
+### Response headers
+
+Every chat response carries:
+
+```
+X-Nautgate-Decision-Id     the audit-log join key
+X-Nautgate-Provider        who served it
+X-Nautgate-Model           what served it
+X-Nautgate-Tier            the difficulty band it scored into
+X-Nautgate-Score           the score itself
+X-Nautgate-Inbound-Format  openai_chat | anthropic_messages | openai_responses
+```
+
+## Operations
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/health` | No auth. `{"status":"ok"}` |
+| `GET` | `/ready` | No auth. 503 if the DB pool is missing or `SELECT 1` exceeds 500 ms; also reports NautRouter readiness |
+| `GET` | `/dashboard` | The web UI |
+| `GET` | `/` | 302 → `/dashboard` |
+
+## Keys
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/keys` |
+| `POST` | `/v1/keys` |
+| `POST` | `/v1/keys/{key_id}/revoke` |
+
+## Audit and decisions
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/decisions/recent` |
+| `GET` | `/v1/decisions/{decision_id}` |
+| `GET` | `/v1/whoami` |
+| `GET` | `/v1/stats` |
+| `GET` | `/v1/reports/audit` |
+| `GET` | `/v1/notifications` |
+
+## Cost and cache
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/cost/summary` |
+| `GET` | `/v1/cost/timeseries` |
+| `GET` | `/v1/cost/openrouter-balance` |
+| `GET` | `/v1/cache/summary` |
+| `GET` | `/v1/cache/prefixes` |
+
+## Quality and behaviour
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/quality/summary` · `/models` · `/health` |
+| `GET` | `/v1/quality/anti-patterns` · `-by-agent` · `-by-session` |
+| `GET` | `/v1/quality/delegation-edges` |
+| `GET` | `/v1/quality/evaluation/{decision_id}` |
+| `POST` | `/v1/quality/evaluate/{decision_id}` |
+| `GET` | `/v1/behavior/per-model` · `/compare/latest` · `/trace/{decision_id}` |
+| `POST` | `/v1/behavior/compare` |
+
+## Drift and scorecard
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/drift` |
+| `GET` | `/v1/drift/{provider}/{model_path}/anomalies` |
+| `POST` | `/v1/drift/investigate` |
+| `GET` | `/v1/drift/investigations` · `/{investigation_id}` |
+| `GET` | `/v1/drift/report.html` |
+| `POST` | `/v1/drift/report` |
+| `GET` | `/v1/scorecard` |
+| `GET` | `/v1/scorecard/{provider}/{model_path}/incidents` |
+
+## Benchmarking and experiments
+
+| Method | Path |
+|---|---|
+| `POST` | `/v1/bench/run` |
+| `GET` | `/v1/bench` |
+| `GET` | `/v1/bench/head-to-head` |
+| `GET` | `/v1/shadow` · `/trial/{trial_id}` |
+| `PUT` | `/v1/shadow/config` |
+
+## Insights and improvements
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/insights/headline` · `/{panel_name}` |
+| `GET` | `/v1/improvements` |
+| `POST` | `/v1/improve/simulate/{decision_id}` |
+| `GET` | `/v1/findings/summary` |
+| `GET` | `/v1/agents` · `/agents/discovered` · `/projects` |
+
+## Provider health
+
+| Method | Path |
+|---|---|
+| `GET` | `/v1/health/providers` · `/statuspages` · `/openrouter-models` |
+| `GET` | `/v1/probe/summary` · `/history` |
+| `GET`/`PUT` | `/v1/probe/config` |
+| `POST` | `/v1/probe/run` |
+
+## Configuration and backups
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET`/`PUT` | `/v1/config` | Runtime settings |
+| `POST` | `/v1/config/sb-ingest/test` | |
+| `GET`/`PUT` | `/v1/profile` | |
+| `GET`/`POST` | `/v1/backups` | |
+| `GET`/`PUT` | `/v1/backups/config` | |
+| `DELETE` | `/v1/backups/{backup_id}` | |
+| `POST` | `/v1/backups/{backup_id}/restore` | **Destructive** — drops and recreates the `nautgate` schema |

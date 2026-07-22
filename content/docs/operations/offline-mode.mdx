@@ -1,0 +1,72 @@
+---
+title: Offline mode
+description: Air-gapped operation, and exactly what it does and doesn't cover.
+---
+
+Offline mode stands down every timer-driven outbound call while leaving serving
+traffic untouched. Point the gateway at a local model, turn it on, and the
+process talks to nothing but localhost.
+
+## Turning it on
+
+In **Settings**, or:
+
+```bash
+NAUTGATE_OFFLINE=1
+```
+
+The environment variable is a **hard override** — when set, the dashboard toggle
+cannot turn it back off. The database toggle takes effect live, without a
+restart, because the schedulers re-check on every tick.
+
+If the check itself fails for any reason it assumes *online*. It fails safe
+toward working, not toward silence.
+
+## What stands down
+
+| Caller | Behaviour |
+|---|---|
+| Provider heartbeat | The 60-second liveness ping stops, and cached provider status is cleared. This is the main source of unsolicited outbound traffic |
+| LLM probe scheduler | The whole probe cycle is skipped |
+| SecondBrain memory ingest | Forced disabled rather than connecting — it usually lives on another host |
+| OpenRouter balance endpoint | Returns 503 `{"offline": true}` instead of calling out |
+
+Serving traffic is unaffected: neither the request pipeline nor either forwarder
+consults the offline flag. The backup scheduler keeps running because it only
+writes to local disk.
+
+## What it does not cover
+
+<Callout type="warn">
+Offline mode gates **timer-driven** callers. These are request-driven and are
+**not** covered:
+
+- **Quality judging** — calls a judge model after a response
+- **Shadow trials** — calls a challenger and a judge
+- **The classification LLM confirm pass** — if you enabled it
+- **`GET /v1/health/statuspages`** — fetches provider status pages on demand
+
+For a genuinely air-gapped deployment, disable quality evaluation and shadow
+trials in Settings as well, and make sure the classify confirm pass is off (it is
+off by default).
+</Callout>
+
+## Verifying it
+
+Do not take this page's word for it — the claim is designed to be tested. Sample
+the process's open sockets across a full timer cycle (at least 70 seconds, so a
+60-second heartbeat would have fired) and confirm nothing but loopback:
+
+```bash
+# macOS
+while true; do lsof -nP -p $(pgrep -f 'app.main:app') -iTCP -sTCP:ESTABLISHED; sleep 5; done
+
+# Linux
+watch -n5 "ss -tnp | grep $(pgrep -f 'app.main:app')"
+```
+
+With offline off you will see the heartbeat reaching provider IPs on :443. With it
+on, only `127.0.0.1` — while a local model keeps answering.
+
+That is the difference between a policy document and evidence, and it is the
+whole reason this feature exists.

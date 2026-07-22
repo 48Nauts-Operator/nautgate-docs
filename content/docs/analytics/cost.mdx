@@ -1,0 +1,36 @@
+---
+title: Cost
+description: Spend, and the value your subscriptions covered.
+---
+
+Aggregates over the audit log for a window, filterable by agent and project:
+calls, cost, notional cost, tokens, average latency and empty-response counts,
+broken down by provider, model, tier, agent and project.
+
+## Subscription saved
+
+The headline number. It is `SUM(notional_cost_usd)` — **the metered list price of
+traffic your flat-rate plans covered**, computed per call at the same prices a
+metered call would have used.
+
+<Callout>
+This is not money saved by routing. It is what the same work would have been
+billed at through the API, for calls that your subscription made free. It is a
+"was the plan worth it" number, not an optimisation result.
+</Callout>
+
+Throughout the analytics, spend is summed as
+`COALESCE(NULLIF(cost_usd, 0), notional_cost_usd, 0)` — real metered cost where
+billed, otherwise the notional value — so subscription traffic is not invisible
+in an agent's totals.
+
+## OpenRouter balance
+
+`GET /v1/cost/openrouter-balance` reports remaining credit and a seven-day local
+burn rate. It is the one cost view that makes an outbound call, and it respects
+[offline mode](/docs/operations/offline-mode).
+
+## Budgets
+
+Per project, agent or model family, daily or monthly, with a warning threshold.
+Exceeding a cap returns HTTP 429.

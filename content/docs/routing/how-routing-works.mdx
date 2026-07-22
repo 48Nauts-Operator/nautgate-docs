@@ -1,0 +1,99 @@
+---
+title: How routing works
+description: The DECIDE ladder — the fixed precedence that picks a model.
+---
+
+Every metered request runs the same pipeline:
+
+```
+auth → CLASSIFY → SCORE → DECIDE → PRECAPTURE → forward → outcome → respond
+```
+
+`DECIDE` is the part that picks a model, and it is a fixed precedence — not a
+heuristic. Every rung is recorded with the decision, so "why did this call go
+there" is a lookup rather than an argument.
+
+## The ladder
+
+| # | Rung | Wins when |
+|---|---|---|
+| 1 | **`X-Naut-Model` header** | Present on the request |
+| 2 | **`api_keys.override_model`** | The key has a model pinned |
+| 3 | **Plugin / brain override** | An extension returns one |
+| 4 | **Tier score** | `model` is `"auto"` |
+| — | **Explicit passthrough** | Any other `model` value |
+
+The header beats everything, including an explicit model in the request body.
+When any of the first three fire, the decision is recorded as
+`override:<source>-><model>` and the `model` field in the payload is rewritten
+before forwarding.
+
+<Callout>
+There is a fourth rung in the source comments — `routing_preferences.preferred_models`,
+a per-caller soft preference. It is **deferred and not implemented**: the column
+is read but never used to select a model. Only `banned_models` from caller
+preferences is honoured, and only on the `auto` path.
+</Callout>
+
+## `model: "auto"`
+
+Ask for `auto` and NautGate scores the prompt, picks a tier, and resolves that
+tier to a model through `config/routing.yaml`.
+
+Scoring is **deterministic and does not call a model.** It is a 14-dimension
+function with uniform weights, so the same prompt always scores the same. The
+aggregate maps to a tier:
+
+| Aggregate | Tier |
+|---|---|
+| `< 0.15` | fast |
+| `< 0.30` | balanced |
+| `< 0.50` | deep |
+| `≥ 0.50` | expert |
+
+On top of the average there are **specialty floors** — three or more fenced code
+blocks forces `expert`; any code, tool definitions, or legal/medical/programming
+signals force at least `deep`. The intent is that difficulty shouldn't be
+averaged away by an otherwise short prompt.
+
+The resolved decision is recorded as `auto:<tier>-><provider>/<model>`. If the
+primary for a tier is unhealthy or banned, the fallback is used; if both are
+blocked the primary is returned anyway rather than failing the request.
+
+<Callout type="warn">
+**`config/routing.yaml` ships an opinionated policy you probably want to change.**
+The bundled table deliberately bans Anthropic and OpenAI models from the `auto`
+tier — any model matching `anthropic/`, `claude-`, `openai/`, `gpt-`, `o1-`,
+`o3-` or `codex-`. That is because the author holds Max and ChatGPT
+subscriptions, so routing that traffic through OpenRouter would pay twice. If you
+do not hold those subscriptions, edit `config/routing.yaml`.
+</Callout>
+
+## Explicit models
+
+Any other `model` value is passed through as-is, recorded as `explicit:<model>`.
+
+Anthropic snapshot names are normalised first: a trailing `-YYYYMMDD` is stripped
+and the name mapped to its family, so `claude-opus-4-8-20250101` becomes
+`claude-opus-4`. This keeps a dated snapshot from looking like a substitution
+later. The decision reason records both: `explicit:<original>-><normalized>`.
+
+## Provider resolution
+
+The model string's namespace picks the upstream:
+
+| Pattern | Provider |
+|---|---|
+| `openrouter/…` | OpenRouter |
+| `lmstudio/…` | LM Studio |
+| `claude-…`, `anthropic/claude-…` | Anthropic |
+| `gpt-`, `o1-`, `o3-`, `o4-`, `chatgpt-`, `openai/…` | OpenAI |
+| anything else | LM Studio (the fallback branch) |
+
+An unknown model that resolves nowhere raises `Unknown model: <key>`.
+
+## What comes back
+
+Every chat response carries the decision in its headers — see
+[Endpoints](/docs/reference/endpoints#response-headers). The `X-Nautgate-Decision-Id`
+is the join key for the whole audit trail.

@@ -1,0 +1,36 @@
+---
+title: Cache
+description: Prefix reuse and what it is worth.
+---
+
+Agent traffic resends a large stable prefix every turn — the system prompt plus
+every tool schema. Whether that prefix is reused is the single biggest lever on
+what a session costs.
+
+## The metrics
+
+**Hit rate** — `cache_read / (cache_read + cache_write + prompt_tokens)`. The
+share of *input* served from cache.
+
+**Write-to-read ratio** — `cache_write / cache_read`. High means you are paying to
+populate a cache you are not reading back.
+
+**Savings** — computed per model against live prices: what the input would have
+cost uncached, minus what it cost with cache tiers applied. Input-side only.
+Models without a pricing entry report `null`, not `0`.
+
+## Prefix reuse
+
+Calls are grouped by a hash of their stable prefix, giving three views:
+
+- **Top reused** — the prefixes doing their job.
+- **Leaky** — reuse ratio below 1. Something early in the prompt is changing every
+  turn, usually an injected timestamp, session id or counter, busting an
+  otherwise-stable prefix. These are the cheapest wins available.
+- **Latency** — time-to-first-byte spread per prefix.
+
+<Callout>
+The latency lens exists because **local models report no cache tokens at all.**
+For a local runtime the only visible evidence of prefix reuse is that the first
+token arrives far sooner. If you run local models, this is the view to use.
+</Callout>

@@ -1,0 +1,36 @@
+---
+title: Quality
+description: Post-hoc judging of real answers.
+---
+
+A judge model scores responses **after** they were served. Nothing is ever
+blocked or delayed — despite the "gate" name, this is purely post-hoc scoring.
+
+## What gets judged
+
+- **Every anomaly, always** — empty responses, HTTP errors, client disconnects,
+  truncation, high bloat, or tools offered but never called.
+- **A sample of everything else** — 10% by default.
+- **Never** anything classified `secret`, and never machine probes (single
+  "hi"/"ping"-shaped calls).
+
+A daily USD cap applies, checked before each judge call. Judge traffic uses a
+dedicated client that bypasses NautRouter, so judging never re-enters your own
+routing analytics.
+
+## What it returns
+
+Five scores from 0 to 5 — task understanding, task completion, reasoning
+efficiency, action compliance, prompt clarity — plus the share of the response
+that was irrelevant, the data categories it touched, failure tags from a fixed
+set of sixteen, an anti-pattern label, a suggested prompt rewrite, and coaching
+notes.
+
+One row per evaluated call, which is what feeds the failure-mode heatmap and the
+substitution analysis in [Insights](/docs/analytics/insights).
+
+<Callout>
+Judged scores are a model's opinion of another model's output. They are useful in
+aggregate — as a trend, or to compare two models on the same task — and weak as a
+verdict on any single call.
+</Callout>

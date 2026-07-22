@@ -1,0 +1,54 @@
+---
+title: Credential lanes
+description: Subscription traffic passes through free; metered keys get routed.
+---
+
+NautGate treats two kinds of credential completely differently, and the choice is
+made before anything else happens — before auth, before the pipeline.
+
+## Lane A — OAuth passthrough
+
+Subscription traffic. Detected by credential shape:
+
+- **Anthropic / Claude Code** — a bearer or `x-api-key` value starting with
+  `sk-ant-oat01-`.
+- **ChatGPT / Codex** — the presence of a `chatgpt-account-id` header.
+
+These requests skip the `ng_` auth gate entirely, bypass NautRouter, run no
+DECIDE ladder, and have no model rewritten. Headers are forwarded verbatim minus
+hop-by-hop ones. Your plan covers the call, so it costs nothing.
+
+They are still **fully audited.** A precapture row goes in before forwarding and
+an outcome row after, with `cost_usd = 0.0` and `notional_cost_usd` set to what
+the same work *would* have cost on metered billing. That notional figure is what
+the dashboard reports as **subscription saved**.
+
+The token itself is never stored. The agent is identified by a 16-character slice
+of the token body, recorded as `claude-oauth-<slice>`.
+
+<Callout type="warn">
+The Anthropic OAuth forwarder passes the request path through unchanged to
+`api.anthropic.com`. That means an `sk-ant-oat01-` token only works against
+**`/v1/messages`** — sending one to `/v1/chat/completions` or `/v1/responses`
+forwards it to an Anthropic path that does not exist.
+</Callout>
+
+## Lane B — metered `ng_` keys
+
+Everything else. Runs the full pipeline: classify → score → decide → forward
+through NautRouter → cost computed from `config/pricing.yaml`.
+
+## Why keep them apart
+
+Because mixing them silently costs money. If subscription traffic were routed
+like metered traffic, you would pay per token for calls your flat-rate plan
+already covers. If metered traffic were passed through, it would bypass routing
+entirely. Keeping the lanes distinct is what lets a Max plan and a routed model
+coexist in one gateway without either quietly paying for the other.
+
+## Rate limits
+
+The Anthropic passthrough retries `429` and `529` responses up to three times
+with capped exponential backoff, honouring `Retry-After` where present, and flags
+the outcome row as rate-limited so cap-hit events show up in the dashboard rather
+than as mystery failures.
