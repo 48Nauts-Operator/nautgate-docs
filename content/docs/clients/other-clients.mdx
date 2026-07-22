@@ -30,10 +30,33 @@ appearing, that is why — capturing it needs a proxy rather than a base-URL swa
 
 ## Pi
 
-Pi's Responses traffic has a dedicated isolated route, `POST /pi/v1/responses`,
-which forwards the Responses body verbatim to OpenAI. It is deliberately separate
-from the shared pipeline so that Pi-specific handling can never affect the other
-routes.
+Pi's Responses traffic has a dedicated route, `POST /pi/v1/responses`. Point Pi's
+`nautgate-oai` provider at it.
+
+### Why it is a separate route
+
+OpenAI **forbids `tools` together with `reasoning_effort` on
+`/v1/chat/completions`, but allows it on `/v1/responses`.** Pi's Fusion builder
+uses exactly that combination — a high-reasoning model with a large tool set — so
+it fails on the normal routed chat-completions path. Pi's native OpenAI provider
+already speaks the Responses shape, and this route lets it keep doing so through
+the gateway.
+
+The route is **pure routing**: the Responses body is forwarded byte-for-byte to
+OpenAI and streamed back byte-for-byte. No translation, no NautRouter, no shared
+code. That isolation is deliberate — it means Pi-specific handling cannot affect
+`/v1/messages` (Claude Code) or `/v1/responses` (Codex OAuth), which never touch
+this path.
+
+Calls are still recorded: session id, prompt excerpt, classification, tool calls
+and cache prefix hash are all captured, with the same policy gating as everywhere
+else.
+
+<Callout>
+A Fusion run that puts several models on the same prompt shows up well in
+[head-to-head](/docs/analytics/bench), which correlates real calls by the task
+they answered — the comparison is populated by exactly this shape of traffic.
+</Callout>
 
 ## Your own application
 
