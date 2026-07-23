@@ -1,63 +1,80 @@
 ---
 title: Deployment
-description: Running it with Docker, and the compose traps.
+description: Running it with Docker — the published stack, or from source.
 ---
+
+## Quickstart (published images)
+
+```bash
+curl -fsSL https://nautgate.dev/compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+This pulls prebuilt images from GHCR and starts everything — no clone, no build.
+The dashboard is at `http://localhost:8090/dashboard`.
+
+Three services, all bound to loopback:
+
+| Service | Port |
+|---|---|
+| `nautgate` (the gateway + dashboard) | `127.0.0.1:8090` |
+| `nautrouter` (routing sidecar) | internal |
+| `nautgate-db` (Postgres 16) | internal |
+
+### Your first API key
+
+NautGate mints one on first boot and prints it to the log — grab it, then use it
+for the dashboard and API:
+
+```bash
+docker compose logs nautgate | grep -A1 'first-run'
+```
+
+Mint more, or revoke that one, in **Settings → Keys**.
+
+### Provider keys
+
+Optional, and all `${VAR:-}`-defaulted so an empty config still boots. Set the
+ones you use in a `.env` file next to the compose (or export them):
+
+```bash
+OPENROUTER_API_KEY=...     # enables the default auto-tier routing
+ANTHROPIC_API_KEY=...  OPENAI_API_KEY=...  GEMINI_API_KEY=...
+```
+
+They reach both the router (which forwards calls) and the core process (which
+runs quality judging, shadow trials and the drift investigator).
+
+### Your own database or config
+
+- Point at an external Postgres by setting `NAUTGATE_DB_URL`.
+- Override the bundled routing/pricing tables by uncommenting the
+  `./config:/app/config:ro` mount in the compose file.
+
+## From source
+
+To build the images yourself instead of pulling them:
 
 ```bash
 git clone https://github.com/48Nauts-Operator/NautGate.git
 cd NautGate
-cp .env.example deploy/.env
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/compose.published.yml up --build -d
 ```
 
-Three services, all bound to loopback:
+(The compose file has a commented `build:` block per service — uncomment those and
+it builds locally instead of pulling.)
 
-| Service | Port | Started by default |
-|---|---|---|
-| `nautgate-db` (Postgres 16) | `127.0.0.1:5432` | yes |
-| `nautrouter` (sidecar) | `127.0.0.1:8404` | yes |
-| `nautgate-core` (the gateway) | `127.0.0.1:8090` | **no** |
-
-<Callout type="warn">
-**`docker compose up` does not start NautGate itself.** The core service sits
-behind the `full` profile, because day-to-day development runs it directly with
-`uv run uvicorn` for reload. To get the whole stack in containers:
-
-```bash
-docker compose -f deploy/docker-compose.yml --profile full up -d
-```
-
-This is the single most common way to end up with a gateway that appears not to
-exist.
+<Callout>
+The repo also ships `deploy/docker-compose.yml`, which is the **development**
+stack — it starts only Postgres and the router, and runs the gateway itself via
+`uv run uvicorn` for hot reload. That one is for hacking on NautGate, not for
+running it; use the published compose above to actually run it.
 </Callout>
-
-## Two more compose caveats
-
-**Provider keys do not reach the core container.** The compose file passes them to
-`nautrouter` only. Serving traffic works, because routing happens in the sidecar —
-but the features that call models from the core process (quality judging, shadow
-trials, the drift investigator) will find no credentials. Add them to the
-`nautgate-core` environment if you want those.
-
-**`NAUTGATE_DB_URL` is ignored by the core container** — its database URL is
-hardcoded in the compose file rather than templated. Setting it in `deploy/.env`
-has no effect there.
-
-## Extensions
-
-An optional overlay adds the capture and brain sidecars:
-
-```bash
-docker compose \
-  -f deploy/docker-compose.yml \
-  -f deploy/docker-compose.with-extensions.yml \
-  --profile full up -d
-```
 
 ## Backups
 
-`pg_dump` via `docker exec`, gzipped to `NAUTGATE_BACKUP_DIR`
-(`~/.nautgate/backups` by default), on a schedule you set in Settings. The backup
+A `pg_dump` of the `nautgate` schema, gzipped to a persistent volume, on a
+schedule you set in **Settings** (default: every 3 hours, keep the last 20). The
 scheduler is local-disk only, so it keeps running in
 [offline mode](/docs/operations/offline-mode).
 
