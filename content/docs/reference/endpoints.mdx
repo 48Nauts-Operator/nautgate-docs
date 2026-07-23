@@ -48,7 +48,7 @@ X-Nautgate-Inbound-Format  openai_chat | anthropic_messages | openai_responses
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/health` | No auth. `{"status":"ok"}` |
+| `GET` | `/health` | No auth. `{"status":"ok","version":"0.1.0"}` (version from the running build) |
 | `GET` | `/ready` | No auth. 503 if the DB pool is missing or `SELECT 1` exceeds 500 ms; also reports NautRouter readiness |
 | `GET` | `/dashboard` | The web UI |
 | `GET` | `/` | 302 → `/dashboard` |
@@ -147,3 +147,13 @@ X-Nautgate-Inbound-Format  openai_chat | anthropic_messages | openai_responses
 | `GET`/`PUT` | `/v1/backups/config` | |
 | `DELETE` | `/v1/backups/{backup_id}` | |
 | `POST` | `/v1/backups/{backup_id}/restore` | **Destructive** — drops and recreates the `nautgate` schema |
+
+## Provider keys
+
+Managed in Settings → Providers; encrypted at rest (AES-256-GCM). See [Configuration → Provider keys](/docs/operations/configuration). Valid providers: `openrouter`, `anthropic`, `openai`, `gemini`.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/v1/providers` | List configured providers and their status — never returns secrets |
+| `PUT` | `/v1/providers/{provider}` | Set or replace a provider's key |
+| `DELETE` | `/v1/providers/{provider}` | Remove a provider's key |
