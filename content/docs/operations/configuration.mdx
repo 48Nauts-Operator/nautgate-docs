@@ -76,6 +76,26 @@ Secrets are never returned by `GET /v1/config` and cannot be set through it — 
 database stores the *name of the environment variable* to read a key from, never
 the key itself.
 
+## Provider keys
+
+Your model-provider keys (Anthropic, OpenAI, OpenRouter, Gemini) can be set two
+ways:
+
+- **Environment** — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
+  `GEMINI_API_KEY`. The original method; still works and is the fallback.
+- **In the dashboard** — **Settings → Providers**. Keys set here are stored
+  **encrypted at rest** (AES-256-GCM) and override the matching env var for that
+  provider. This needs `NAUTGATE_MASTER_KEY` set — see below.
+
+<Callout type="warn">
+`NAUTGATE_MASTER_KEY` encrypts the in-app provider keys. Set it to a random
+secret **and keep a backup**: losing it means every in-app provider key must be
+re-entered (the ciphertext becomes unrecoverable — the same trade every tool that
+does this makes). Only needed if you use Settings → Providers; env-only setups
+don't need it. And because backups store the ciphertext, restoring onto a box
+with a *different* master key can't decrypt those keys.
+</Callout>
+
 <Callout type="warn">
 The environment-variable fallbacks for `quality_eval` and `sb_ingest` only apply
 while the stored value is still the compiled default. **Once you save one of
