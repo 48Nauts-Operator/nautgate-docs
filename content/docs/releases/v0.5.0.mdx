@@ -1,0 +1,47 @@
+---
+title: NautGate 0.5.0
+description: Max Guard and the new operational Observatory.
+---
+
+Released 24 August 2026.
+
+## Guard Claude Max capacity
+
+Max Guard treats subscription capacity as a limited resource even when the API
+cost is zero. It observes fresh input, cache reads and writes, output, request
+count, project-hour pressure, and rolling five-hour and weekly windows. Policies
+start in observe mode and can be changed explicitly to warn or pause.
+
+A paused Claude session receives a structured, non-retryable response. NautGate
+does not silently route that request to metered Anthropic credits. Operators can
+pause, resume, or temporarily authorize a specific attributed session, and the
+control action enters the audit evidence chain.
+
+## See what is happening
+
+The new Observatory is split into three focused pages:
+
+- **Summary** — work, token-consuming projects, current risk, privacy
+  Lighthouse, quality, drift, traffic, and sessions linked to Audit Log.
+- **Team** — active and inactive `ng_` identities, fresh input versus cache
+  reads, observed work, compliance findings, sessions, and sortable Agent
+  Streams.
+- **Accounts** — Max and API accounts, provider status, period-scoped API spend
+  versus subscription value, cache use, and live OpenRouter credit.
+
+## Explain compliance findings
+
+Each Team compliance indicator opens an evidence-backed explanation: who was
+observed, the attributable application/project/session where available, the
+routed model, the detected behavior, its measured impact, and the limits of the
+evidence. Missing metadata is shown as unavailable rather than guessed. The
+evidence can be exported as JSON.
+
+## Cache evidence
+
+Anthropic-compatible traffic now records cache reads and writes independently.
+Team charts compare fresh input with cache reads, while Max Guard detects stable
+large prefixes that repeatedly return without cache reuse.
+
+See the complete [changelog on GitHub](https://github.com/48Nauts-Operator/NautGate/blob/main/CHANGELOG.md)
+and the [Max Guard specification](https://github.com/48Nauts-Operator/NautGate/blob/main/docs/features/max-guard.md).

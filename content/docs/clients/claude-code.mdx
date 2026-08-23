@@ -20,15 +20,19 @@ have cost on metered billing. See [Credential lanes](/docs/routing/lanes).
 ```bash
 ANTHROPIC_BASE_URL=http://localhost:8090 \
 ANTHROPIC_API_KEY=ng_… \
-claude --bare
+claude
 ```
 
 <Callout type="warn">
-**`--bare` is required.** Without it Claude Code prefers its stored OAuth login
-from the keychain and your `ANTHROPIC_API_KEY` is ignored — so the request
-arrives on the subscription lane and nothing is routed. If your override seems to
-do nothing, this is almost always why.
+Do not add `--bare` merely to make NautGate work. It changes Claude Code's
+normal authenticated launch behavior and can produce a successful-login then
+logout loop in environments that rely on the stored Claude session. Verify the
+actual lane in NautGate instead of inferring it from the flag.
 </Callout>
+
+Applications such as xNaut should open the session through NautGate's native
+launch contract. That supplies application, project, run, and native-session
+identity to Max Guard while leaving Claude Code's own authentication flow intact.
 
 Claude Code has no model setting, so the model comes from the key. Mint one with
 an `override_model` — see [Model override](/docs/routing/model-override) — and
