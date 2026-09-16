@@ -1,0 +1,192 @@
+---
+title: Verified Audit Trail
+description: Set up hardware-signed evidence with a Securosys CloudsHSM, from an empty partition to a bundle that verifies offline.
+---
+
+Enterprise feature. Every completed decision leaves a receipt; receipts are
+folded in sequence into Merkle checkpoints; a sidecar asks the Securosys
+Transaction Security Broker (TSB) to sign each checkpoint root with a key that
+never leaves the HSM. A bundle exported for one receipt verifies on any machine
+with nothing but the public key. Try it on
+[nautgate.dev](https://nautgate.dev/#verify-lab) before you set it up.
+
+What it proves, in the spec's own words: the disclosed receipt is included in
+a hardware-signed checkpoint and has not been modified. It does not prove that
+captured input was truthful or that nothing was omitted before the gap checks
+ran. Model traffic never waits for the HSM; if the broker is down, receipts stay
+`pending` and the signer catches up in order.
+
+## What you need
+
+- A Securosys CloudsHSM partition with REST access. The sandbox at
+  `https://sbx-rest-api.cloudshsm.com` is enough to run everything on this
+  page; production partitions have their own TSB URL.
+- The TSB credential for that partition: a JWT (sandbox onboarding hands you
+  one as `sbx-jwt`) or an API key.
+- A NautGate stack on Docker Compose, 2.24 or newer, and the repo checkout
+  next to it (the sidecar builds from `extensions/sb-attest`).
+
+## 1. Mint the signing key inside the HSM
+
+One `POST /v1/key` against the TSB. The attribute set is the one Securosys
+documents for document signing: it can sign and nothing else, it is not
+extractable, not modifiable, and it has no approval policy, so signing needs
+no quorum.
+
+```bash
+export TSB=https://sbx-rest-api.cloudshsm.com
+export TSB_JWT='<your JWT>'
+
+curl -fsS -X POST "$TSB/v1/key" \
+  -H "Authorization: Bearer $TSB_JWT" -H "Content-Type: application/json" \
+  -d '{
+    "label": "NAUTGATE_AUDIT_KEY",
+    "algorithm": "RSA",
+    "keySize": 4096,
+    "attributes": {
+      "sign": true, "decrypt": false, "unwrap": false, "derive": false,
+      "extractable": false, "sensitive": true, "modifiable": false, "copyable": false
+    },
+    "policy": null
+  }'
+```
+
+`401 Could not parse JWT` means the token is truncated or expired, not that
+the request is wrong. A label that already exists is refused; a signing key's
+identity must not change under a fingerprint someone has recorded.
+
+Pick the label carefully. It becomes the key id inside every bundle and cannot
+be renamed; rotation means a new label.
+
+## 2. Export the public key and record its fingerprint
+
+```bash
+curl -fsS "$TSB/v1/key/NAUTGATE_AUDIT_KEY/attributes" -H "Authorization: Bearer $TSB_JWT" \
+  | python3 -c '
+import json,sys,re
+xml=json.load(sys.stdin)["xml"]
+b64=re.search(r"<public_key format=\"base64\">(.*?)</public_key>",xml,re.S).group(1).strip()
+print("-----BEGIN PUBLIC KEY-----"); print("\n".join(b64[i:i+64] for i in range(0,len(b64),64))); print("-----END PUBLIC KEY-----")' \
+  > nautgate-audit-public.pem
+
+openssl pkey -pubin -in nautgate-audit-public.pem -outform DER | openssl dgst -sha256
+```
+
+Write the digest down somewhere that is not the deployment: a ticket, a
+vault note, a printed sheet. That copy is the trust anchor. A bundle that
+carries its own key would be vouching for itself, so every verifier is pinned
+to the fingerprint you recorded through a separate channel.
+
+## 3. Configure the stack
+
+Add these to the env file your stack runs from (production stacks usually use
+`deploy/profiles/<host>.env`, not `deploy/.env`). Compose accepts the
+multi-line PEM inside double quotes.
+
+```bash
+SB_ATTEST_TSB_URL=https://sbx-rest-api.cloudshsm.com
+SB_ATTEST_KEY_NAME=NAUTGATE_AUDIT_KEY
+SB_ATTEST_JWT=<your JWT>                    # or SB_ATTEST_API_KEY
+SB_ATTEST_INTERNAL_TOKEN=<openssl rand -hex 32>
+SB_ATTEST_PUBLIC_KEY_FINGERPRINT=<64 hex from step 2>
+SB_ATTEST_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----
+...
+-----END PUBLIC KEY-----"
+NAUTGATE_AUDIT_INSTANCE_ID=<host name>
+```
+
+`SB_ATTEST_INTERNAL_TOKEN` is only spoken between the core and the sidecar.
+Generate it; never reuse another token. The sidecar reaches the database with
+the same `POSTGRES_*` credentials as the core, or with an explicit
+`SB_ATTEST_DB_URL`.
+
+Dry run before touching a running stack. The PEM must appear twice, once for
+the sidecar and once for the core:
+
+```bash
+cd deploy
+docker compose --env-file profiles/<host>.env \
+  -f compose.production.yml -f docker-compose.with-attestation.yml config \
+  | grep -c "BEGIN PUBLIC KEY"     # 2
+```
+
+## 4. Launch
+
+```bash
+docker compose --env-file profiles/<host>.env \
+  -f compose.production.yml -f docker-compose.with-attestation.yml \
+  up -d --build sb-attest nautgate-core
+```
+
+The sidecar starts first, migrates its own table and logs
+`sb-attest ready: key=NAUTGATE_AUDIT_KEY tsb=...`. The core is recreated once
+the sidecar's health check passes, so the gateway is away for about twenty
+seconds. The core refuses to start if the configured fingerprint does not
+match the PEM.
+
+## 5. Watch it catch up
+
+`GET /v1/audit/status` with an admin bearer. A stack that already holds
+receipts starts `critical` with a `signing_lag` alert. That is the backlog:
+the signer stages 1000 receipts per checkpoint on a five-second tick and the
+sandbox signs each in one to two seconds, so 100k old receipts take about ten
+minutes. Done looks like this:
+
+```json
+{"total": 9, "verified": 9, "pending": 0, "failed": 0, "signing_lag_seconds": 0,
+ "open_gaps": 0, "checkpoint_failures": 0, "health": "healthy", "alerts": []}
+```
+
+The same numbers sit at the top of the Audit Log page in the dashboard, and
+the collapsed "Evidence receipts" and "Checkpoint history" sections at the
+bottom of that page list the individual receipts and checkpoints.
+
+## 6. Prove one bundle end to end
+
+Send any request through the gateway, take the newest receipt, and poll it
+until it reads `verified` (under a minute; the batch max age is 60 seconds).
+
+```bash
+ID=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$GATEWAY/v1/audit/receipts?limit=1" | jq -r .data[0].receipt_id)
+curl -fsS -H "Authorization: Bearer $TOKEN" "$GATEWAY/v1/audit/receipts/$ID"           # evidence_status: verified
+curl -fsS -H "Authorization: Bearer $TOKEN" "$GATEWAY/v1/audit/receipts/$ID/bundle" > evidence.json
+```
+
+Verify it on another machine with the public key and the fingerprint from
+your own record:
+
+```bash
+nautgate receipt verify evidence.json \
+  --public-key nautgate-audit-public.pem \
+  --key-id NAUTGATE_AUDIT_KEY \
+  --fingerprint <64 hex>
+```
+
+Exit 0 and the claim line mean verified. Change one character in
+`evidence.json` and run it again: exit 2 with `receipt content hash mismatch`
+is the verifier doing its job. The same check runs in a browser on
+[nautgate.dev](https://nautgate.dev/#verify-lab), and you can paste your own
+bundle there.
+
+The bundle endpoint answers 404 for pending, failed, unknown and other-agent
+receipts, deliberately. Use the same bearer that made the request.
+
+## Operating it
+
+- **JWT renewal.** A sandbox JWT expires. The sidecar keeps answering
+  `/health` while checkpoints move to `failed` after the retry budget and
+  `checkpoint_failures` rises. Replace `SB_ATTEST_JWT` and run
+  `docker compose ... up -d sb-attest`. The signer retries the oldest staged
+  checkpoint first; nothing is restaged.
+- **Key rotation** is a new label, never new material under an old one. Keep
+  the old public key published; old bundles depend on it.
+- **Gaps** (`open_gaps` above zero) are never fixed by renumbering. Restore
+  the missing receipt from the outcome spool or a verified backup under its
+  original id and sequence, then record the cause.
+- **Strict mode** (withholding a response until its receipt is signed) is
+  not in v1. Setting `NAUTGATE_AUDIT_MODE=strict` is not a compliance
+  shortcut.
+
+The byte-level contract, schemas and threat model live in
+[`docs/specs/audit-v1`](https://github.com/48Nauts-Operator/NautGate/tree/main/docs/specs/audit-v1)
+in the repository, next to the operator runbook.
