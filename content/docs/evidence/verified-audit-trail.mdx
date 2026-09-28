@@ -171,6 +171,48 @@ bundle there.
 The bundle endpoint answers 404 for pending, failed, unknown and other-agent
 receipts, deliberately. Use the same bearer that made the request.
 
+## What a receipt states (September 2026 additions)
+
+Beyond who, what, when and which model, every receipt now carries three more
+blocks. All of them are nullable and honest: a field is null when nothing was
+observed, never guessed.
+
+- **`model_integrity`** — for models NautGate can inspect (Ollama-served
+  today), the weight-manifest digest of the model that answered, its source
+  and resolution time. Vendor API models record `digest_source: unresolved`;
+  successful OpenAI-shaped responses record `result.provider_fingerprint`
+  when the provider sends one.
+- **`request.sampling`** — `temperature` and `top_p` as decimal strings,
+  `seed` as an integer, exactly as the client sent them. The receipt states
+  whether a call ran under deterministic settings.
+- **`environment`** — the calling harness (User-Agent), a declared sandbox id
+  (`X-Nautgate-Sandbox-Id` header), and `capture_path`: `gateway` and
+  `oauth_*` mean NautGate saw the call in-path; `ingest` means a sidecar
+  self-reported it. Auditors treat those as different grades of evidence.
+
+## Reports and the evidence package
+
+Attested receipts export in human and machine form from the same endpoints
+(same bearer rules as the bundle endpoint):
+
+| Endpoint | Returns |
+|---|---|
+| `/v1/audit/receipts/{id}/report` | Branded HTML report of the receipt |
+| `/v1/audit/receipts/{id}/report.pdf` | The same report as PDF, with the canonical bundle embedded as a file attachment and a QR code |
+| `/v1/audit/receipts/{id}/evidence.zip` | One zip: the PDF, the byte-exact bundle JSON, and VERIFY.txt |
+| `/v1/audit/receipts/{id}/verify?h=<hash-prefix>` | Signature-check verdict page; no bearer needed, the bundle-hash prefix is proof of possession |
+
+The dashboard's Evidence Receipts table downloads the zip per attested
+receipt. The QR on the PDF opens the verdict page when
+`NAUTGATE_PUBLIC_BASE_URL` is set to an address your readers can reach;
+without it the QR carries the receipt id, bundle hash and key fingerprint as
+offline anchors. The verdict page is a convenience check by the issuing
+instance; `nautgate receipt verify` against an out-of-band public key remains
+the trust-grade path.
+
+PDF rendering uses the same HTML template as the report page (weasyprint;
+the container image ships the pango libraries it needs).
+
 ## Operating it
 
 - **JWT renewal.** A sandbox JWT expires. The sidecar keeps answering
